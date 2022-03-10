@@ -7,14 +7,29 @@ def get_prediction_labels(predictions, threshold):
     return pred_labels.astype(int)
 
 def get_roc_vectorized(predictions, truth, dt):
-    thresholds = np.arange(0, 1, dt)
+    '''
+    A vectorized approach to getting the ROC
+    significant speedup vs iterative/for-loop approach...
+    but slightly harder to debug so hopefully no instabilities!
+
+    This matters more so for the confidence interval computation, 
+    several orders of magnitude speedup here.
+    '''
+
+    # get all thresholds we are considering
+    thresholds = np.arange(0, 1+dt, dt)
     nt = thresholds.shape[0]
+
+    # roc: composed of threshold vector (t), 1-specificity vector (x), sensitivity vector (y)
     roc = np.zeros((3, nt))
     roc[0, :] = thresholds
     
+    # getting labels for all predictions- this is a matrix (N*N_t)
     pred_labels = predictions[:,1].reshape((-1, 1)) > thresholds * np.ones((predictions.shape[0], nt))
+
     # sensitivity
     obs_positives = np.sum(truth==1)
+    # looking at number of true positives for all thresholds
     labeled_pos = np.sum(pred_labels[truth==1, :], axis=0)
     # account for 0 denom
     #labeled_pos[obs_positives == 0] = 1
@@ -23,14 +38,18 @@ def get_roc_vectorized(predictions, truth, dt):
     
     # specificity
     obs_negatives = np.sum(truth==0)
+    # looking at number of true negaties for all thresholds
     labeled_neg = np.sum(pred_labels[truth==0, :]==0, axis=0)
     #labeled_neg[obs_negatives == 0] = 1
     #obs_negatives[obs_negatives == 0] = 1
     
+    # if we have no negatives, then specificity is 1 (so x = 1-spec = 0)
     if obs_negatives == 0:
         roc[1,:] = np.zeros(nt)
     else:
         roc[1,:] = 1-(labeled_neg/obs_negatives)
+    
+    # if we have no positives, then sensitivity is 1
     if obs_positives == 0:
         roc[2,:] = np.ones(nt)
     else:

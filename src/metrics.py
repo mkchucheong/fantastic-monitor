@@ -3,7 +3,7 @@ import pandas as pd
 from scipy.integrate import trapz
 
 def get_prediction_labels(predictions, threshold):
-    pred_labels = predictions[:,1].reshape(-1) >= threshold
+    pred_labels = predictions[:,1].reshape(-1) > threshold
     return pred_labels.astype(int)
 
 def get_roc_vectorized(predictions, truth, dt):
@@ -12,7 +12,7 @@ def get_roc_vectorized(predictions, truth, dt):
     roc = np.zeros((3, nt))
     roc[0, :] = thresholds
     
-    pred_labels = predictions[:,1].reshape((-1, 1)) >= thresholds * np.ones((predictions.shape[0], nt))
+    pred_labels = predictions[:,1].reshape((-1, 1)) > thresholds * np.ones((predictions.shape[0], nt))
     # sensitivity
     obs_positives = np.sum(truth==1)
     labeled_pos = np.sum(pred_labels[truth==1, :], axis=0)
@@ -38,13 +38,14 @@ def get_roc_vectorized(predictions, truth, dt):
     return roc
     
 
+# given two coordinates that surround a root, find the root
 def lin_rootfind(coord1, coord2):
     x1,y1 = coord1
     x2,y2 = coord2
 
+    # just algebra here
     m = (y2-y1)/(x2-x1)
-
-    root = (y1 / m) + x1
+    root = (-y1 / m) + x1
     return root
 
 def get_sensitivity(predictions, threshold, truth):
@@ -94,15 +95,22 @@ def get_sens_spec_equivalence(predictions, threshold, truth):
     spec = 1 - roc[1,:]
     sens = roc[2,:]
 
+    # need to find root of delta
     delta = spec-sens
     pos_subset = delta >=0
     neg_subset = delta <= 0
-    if len(pos_subset)== 0:
+
+    # if delta is always negative
+    if len(delta[pos_subset])== 0:
         greatest_neg_idx = np.argmax(delta[neg_subset])
         nearest_t = t[neg_subset][greatest_neg_idx]
-    elif len(neg_subset) == 0:
+
+    # if delta is always positive
+    elif len(delta[neg_subset]) == 0:
         least_pos_idx = np.argmin(delta[pos_subset])
         nearest_t = t[pos_subset][least_pos_idx]
+    
+    # otherwise the "exact" threshold is somewhere in data
     else:
         greatest_neg_idx = np.argmax(delta[neg_subset])
         least_pos_idx = np.argmin(delta[pos_subset])
@@ -111,8 +119,10 @@ def get_sens_spec_equivalence(predictions, threshold, truth):
         pos_t = t[pos_subset][least_pos_idx]
         pos_val = delta[pos_subset][least_pos_idx]
         
+        # if the exact value is present, return it
         if neg_t == pos_t:
             nearest_t = pos_t
+        # else, rootfind
         else:
             nearest_t = lin_rootfind((neg_t, neg_val), (pos_t, pos_val))
 
@@ -122,8 +132,10 @@ def get_ci(fun, predictions, threshold, truth, n_trials, alpha):
     n = len(predictions)
     indices = np.arange(0, n)
     
+    # bootstrap n_trial times
     bootstrapped_results = np.zeros((n_trials, 1))
     for i in range(n_trials):
+        # sampling with replacement
         resampled_indices = np.random.choice(indices, n)
         resampled_predictions = predictions[resampled_indices, :]
         resampled_truth = truth[resampled_indices]
